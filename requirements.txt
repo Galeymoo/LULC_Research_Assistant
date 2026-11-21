@@ -1,0 +1,12 @@
+
+streamlit>=1.36,<2.0
+pandas>=2.0,<3.0
+numpy>=1.26,<2.0
+rank-bm25>=0.2.2
+sentence-transformers>=3.0,<6.0
+faiss-cpu>=1.8
+torch
+transformers>=4.45,<5.0
+safetensors>=0.4
+huggingface_hub>=0.36.0
+requests>=2.31

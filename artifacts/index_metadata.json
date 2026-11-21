@@ -1,0 +1,12 @@
+{
+  "chunk_count": 9728,
+  "embedding_dimension": 384,
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "faiss_index_type": "IndexFlatIP with normalized embeddings",
+  "bm25_tokenizer": "unicode word regex: (?u)\\b\\w+\\b, lowercase",
+  "candidate_counts": {
+    "bm25": 20,
+    "dense": 20
+  },
+  "warning": "For exact comparability with Notebook 07, ensure the BM25 tokenizer and corpus ordering match Notebook 07."
+}

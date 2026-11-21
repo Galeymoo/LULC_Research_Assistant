@@ -1,0 +1,19 @@
+
+# Python environment and cache
+.venv/
+.venv_*/
+__pycache__/
+*.py[cod]
+.hf_cache/
+
+# Secrets and environment variables
+.env
+.streamlit/secrets.toml
+
+# Local data and index artifacts
+data/*.jsonl
+
+
+# System files
+.DS_Store
+Thumbs.db
