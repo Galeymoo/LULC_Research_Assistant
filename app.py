@@ -57,11 +57,7 @@ section[data-testid="stSidebar"] {
     z-index: 1000 !important;
 }
 
-section[data-testid="stSidebar"] > div {
-    background-color: #F0F3F1 !important;
-    opacity: 1 !important;
-}
-
+section[data-testid="stSidebar"] > div,
 section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
     background-color: #F0F3F1 !important;
     opacity: 1 !important;
@@ -254,40 +250,83 @@ def get_value(item, key, default=""):
 
 def is_abstention(answer):
     """
-    Detect whether the LLM indicates that
-    the supplied evidence is insufficient.
+    Detect whether the LLM indicates that the question
+    is outside the research scope or cannot be answered
+    using the supplied evidence.
+
+    This controls whether retrieved passages are displayed.
     """
 
     if not answer:
         return False
 
-    text = answer.lower()
+    text = re.sub(
+        r"\s+",
+        " ",
+        str(answer).lower()
+    ).strip()
 
     abstention_phrases = [
+        # Insufficient evidence
         "insufficient evidence",
         "evidence is insufficient",
-        "evidence does not contain",
-        "does not contain any material relevant",
-        "does not contain relevant information",
-        "no relevant information was found",
-        "cannot answer based on the provided evidence",
-        "unable to answer based on the provided passages",
-        "not enough information in the provided evidence",
+        "there is insufficient evidence",
+        "not enough evidence",
+        "not enough information",
         "the available evidence does not",
-        "no factual response can be derived",
-        "cannot provide a reliable answer",
+        "the evidence does not contain",
+        "the evidence does not provide",
         "the supplied research evidence does not",
+        "the supplied research does not contain",
         "the retrieved passages do not contain",
-        "evidence does not sufficiently address",
-        "the evidence is not sufficient",
-        "none of the supplied passages address",
-        "the evidence is insufficient to answer"
+        "none of the supplied evidence",
+        "none of the supplied passages",
+        "none of the retrieved material addresses",
+        "none of the retrieved evidence",
+        "no relevant information was found",
+        "no supporting evidence was found",
+
+        # Unable to answer
+        "cannot answer based on the provided evidence",
+        "cannot answer using the supplied evidence",
+        "unable to answer based on the provided passages",
+        "unable to answer",
+        "cannot provide a reliable answer",
+        "cannot be answered from the supplied evidence",
+        "cannot be answered using the available evidence",
+        "does not contain the requested information",
+        "does not provide the requested information",
+        "does not address the requested information",
+
+        # Outside research scope
+        "outside the scope",
+        "falls outside the scope",
+        "beyond the scope",
+        "outside the research scope",
+        "outside the scope of the supplied research collection",
+        "outside the scope of the remote sensing",
+        "outside the scope of the supplied research",
+        "not related to the research collection",
+        "not relevant to the research collection",
     ]
 
-    return any(
-        phrase in text
-        for phrase in abstention_phrases
-    )
+    if any(phrase in text for phrase in abstention_phrases):
+        return True
+
+    # Additional pattern checks for different LLM wording.
+    if re.search(
+        r"\b(outside|beyond)\s+(the\s+)?scope\b",
+        text
+    ):
+        return True
+
+    if re.search(
+        r"\binsufficient\s+(supporting\s+)?evidence\b",
+        text
+    ):
+        return True
+
+    return False
 
 
 # ==================================================
