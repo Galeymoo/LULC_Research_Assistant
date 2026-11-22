@@ -49,7 +49,7 @@ h1, h2, h3 {
     font-weight: 650 !important;
 }
 
-/* SOLID SIDEBAR */
+/* Sidebar */
 section[data-testid="stSidebar"] {
     background-color: #F0F3F1 !important;
     border-right: 1px solid #D8DFDA !important;
@@ -220,9 +220,6 @@ if "research_question" not in st.session_state:
 # CALLBACK FUNCTIONS
 # ==================================================
 
-# These callbacks run before Streamlit recreates
-# the widgets. This prevents widget state errors.
-
 def set_research_question(question):
     st.session_state["research_question"] = question
 
@@ -244,32 +241,142 @@ def clear_current_answer():
 # ==================================================
 
 def get_value(item, key, default=""):
+
     if isinstance(item, dict):
         return item.get(key, default)
 
     return getattr(item, key, default)
 
 
-def citation_warnings(answer, passages):
-    """
-    Checks whether cited article IDs appear in
-    retrieved passages.
+# ==================================================
+# ABSTENTION DETECTION
+# ==================================================
 
-    This is a metadata check only. It does not
-    prove claim-level citation support.
+def is_abstention(answer):
+    """
+    Detect whether the LLM indicates that
+    the supplied evidence is insufficient.
     """
 
-    cited_ids = set(
-        re.findall(r"\bA\d+\b", answer or "")
+    if not answer:
+        return False
+
+    text = answer.lower()
+
+    abstention_phrases = [
+        "insufficient evidence",
+        "evidence is insufficient",
+        "evidence does not contain",
+        "does not contain any material relevant",
+        "does not contain relevant information",
+        "no relevant information was found",
+        "cannot answer based on the provided evidence",
+        "unable to answer based on the provided passages",
+        "not enough information in the provided evidence",
+        "the available evidence does not",
+        "no factual response can be derived",
+        "cannot provide a reliable answer",
+        "the supplied research evidence does not",
+        "the retrieved passages do not contain",
+        "evidence does not sufficiently address",
+        "the evidence is not sufficient",
+        "none of the supplied passages address",
+        "the evidence is insufficient to answer"
+    ]
+
+    return any(
+        phrase in text
+        for phrase in abstention_phrases
     )
 
+
+# ==================================================
+# REMOVE DUPLICATE ARTICLES
+# ==================================================
+
+def unique_passages_by_article(passages):
+    """
+    Keep the highest-ranked passage from each
+    unique article.
+
+    Assumes the retriever returns passages in
+    descending reranking order.
+    """
+
+    unique = []
+    seen_articles = set()
+
+    for passage in passages:
+
+        article_id = str(
+            get_value(passage, "article_id", "")
+        ).strip().upper()
+
+        if not article_id:
+            unique.append(passage)
+            continue
+
+        if article_id not in seen_articles:
+            unique.append(passage)
+            seen_articles.add(article_id)
+
+    return unique
+
+
+# ==================================================
+# CITATION VALIDATION
+# ==================================================
+
+def citation_warnings(answer, passages):
+    """
+    Check whether formal article citations refer to
+    articles present in the retrieved passages.
+
+    Supports:
+        [A21]
+        [A21, p. 15]
+        [A21, page 15]
+
+    This checks article ID membership only.
+    It does not verify claim-level support or page accuracy.
+    """
+
+    if not answer or is_abstention(answer):
+        return None
+
+    citation_pattern = (
+        r"\[\s*(A\d+)"
+        r"(?:\s*,\s*p(?:age)?\.?\s*\d+)?"
+        r"\s*\]"
+    )
+
+    cited_ids = {
+        article_id.upper()
+        for article_id in re.findall(
+            citation_pattern,
+            answer,
+            flags=re.IGNORECASE
+        )
+    }
+
+    # No formal citations were found.
+    if not cited_ids:
+        return []
+
     retrieved_ids = {
-        str(get_value(p, "article_id", ""))
-        for p in passages
+        str(
+            get_value(passage, "article_id", "")
+        ).strip().upper()
+        for passage in passages
+        if get_value(passage, "article_id", "")
     }
 
     return sorted(cited_ids - retrieved_ids)
 
+
+# ==================================================
+# DISPLAY RESEARCH EVIDENCE
+# ==================================================
 
 def display_evidence(passages):
 
@@ -301,8 +408,13 @@ def display_evidence(passages):
 
         score = get_value(passage, "rerank_score", None)
 
-        doi = str(get_value(passage, "doi", "") or "")
-        url = str(get_value(passage, "url", "") or "")
+        doi = str(
+            get_value(passage, "doi", "") or ""
+        )
+
+        url = str(
+            get_value(passage, "url", "") or ""
+        )
 
         with st.expander(
             f"{index}. {article_id} — {title}",
@@ -344,6 +456,7 @@ def display_evidence(passages):
 def load_system():
 
     retriever = ResearchRetriever()
+
     generator = EvidenceAnswerGenerator()
 
     return retriever, generator
@@ -396,9 +509,13 @@ with st.sidebar:
     st.markdown("### System architecture")
 
     st.caption("BM25 keyword retrieval")
+
     st.caption("SBERT dense retrieval")
+
     st.caption("Hybrid Reciprocal Rank Fusion")
+
     st.caption("Cross-Encoder reranking")
+
     st.caption("Evidence-grounded LLM")
 
     st.divider()
@@ -485,11 +602,17 @@ with clear_col:
 # ==================================================
 
 suggestions = [
+
     "What are the advantages of Sentinel-2 imagery for LULC classification?",
+
     "Which machine learning algorithms are commonly used for LULC classification?",
+
     "How does spatial resolution affect classification accuracy?",
+
     "What are the main challenges of remote sensing for land cover mapping?",
+
     "How can machine learning improve LULC classification?"
+
 ]
 
 with st.expander("Suggested research questions"):
@@ -513,7 +636,9 @@ with st.expander("Suggested research questions"):
 
 if search_clicked:
 
-    current_question = st.session_state.research_question.strip()
+    current_question = (
+        st.session_state.research_question.strip()
+    )
 
     if not current_question:
 
@@ -522,11 +647,18 @@ if search_clicked:
     else:
 
         st.session_state.last_answer = None
+
         st.session_state.last_passages = []
+
         st.session_state.last_question = current_question
+
         st.session_state.last_error = None
 
         try:
+
+            # ------------------------------------------
+            # RETRIEVAL
+            # ------------------------------------------
 
             with st.spinner(
                 "Retrieving relevant research papers..."
@@ -537,14 +669,24 @@ if search_clicked:
                     top_k=FINAL_TOP_K
                 )
 
+            # ------------------------------------------
+            # REMOVE DUPLICATE ARTICLES
+            # ------------------------------------------
+
+            passages = unique_passages_by_article(passages)
+
             if not passages:
 
                 st.warning(
-                    "No relevant evidence was retrieved. "
+                    "No research passages were retrieved. "
                     "Please try rephrasing your question."
                 )
 
             else:
+
+                # --------------------------------------
+                # LLM GENERATION
+                # --------------------------------------
 
                 with st.spinner(
                     "Generating an evidence-grounded answer..."
@@ -556,7 +698,12 @@ if search_clicked:
                         use_evidence=True
                     )
 
+                # --------------------------------------
+                # SAVE RESULTS
+                # --------------------------------------
+
                 st.session_state.last_answer = answer
+
                 st.session_state.last_passages = passages
 
         except Exception as e:
@@ -575,6 +722,7 @@ if st.session_state.last_error:
     )
 
     with st.expander("View technical details"):
+
         st.code(st.session_state.last_error)
 
 
@@ -588,48 +736,102 @@ elif st.session_state.last_answer:
 
     st.markdown("## Research answer")
 
+    answer = st.session_state.last_answer
+
+    # Detect abstention.
+    abstained = is_abstention(answer)
+
+    # ----------------------------------------------
+    # GENERATED ANSWER
+    # ----------------------------------------------
+
     st.markdown(
         '<div class="answer-container">'
         '<div class="answer-label">Generated answer</div>',
         unsafe_allow_html=True
     )
 
-    st.markdown(st.session_state.last_answer)
+    st.markdown(answer)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    warnings = citation_warnings(
-        st.session_state.last_answer,
-        st.session_state.last_passages
-    )
+    # ----------------------------------------------
+    # CITATION VALIDATION
+    # ----------------------------------------------
 
-    if warnings:
+    if abstained:
 
-        st.warning(
-            "These cited article IDs were not found "
-            "in the retrieved passages: "
-            + ", ".join(warnings)
+        st.info(
+            "The assistant could not find sufficient "
+            "supporting evidence in the research collection. "
+            "Please try a question related to remote sensing, "
+            "satellite imagery, or Land Use and Land Cover."
         )
 
     else:
 
-        st.caption(
-            "Citation metadata check: cited article IDs "
-            "were found among retrieved passages. "
-            "This does not independently establish "
-            "claim-level citation support."
+        warnings = citation_warnings(
+            answer,
+            st.session_state.last_passages
         )
+
+        if warnings:
+
+            st.warning(
+                "These cited article IDs were not found "
+                "in the retrieved passages: "
+                + ", ".join(warnings)
+            )
+
+        elif not re.search(
+            r"\[\s*A\d+",
+            answer,
+            re.IGNORECASE
+        ):
+
+            st.warning(
+                "No formal article citations were detected "
+                "in the generated answer. Please verify its "
+                "references before using it academically."
+            )
+
+        else:
+
+            st.caption(
+                "Citation metadata check: cited article IDs "
+                "were found among retrieved passages. "
+                "This does not independently establish "
+                "claim-level citation support or page accuracy."
+            )
+
+    # ----------------------------------------------
+    # SUPPORTING RESEARCH EVIDENCE
+    # ----------------------------------------------
 
     st.divider()
 
-    st.markdown("## Supporting research evidence")
+    if abstained:
 
-    st.caption(
-        f"{len(st.session_state.last_passages)} "
-        "retrieved passages available for inspection."
-    )
+        st.markdown("## Research evidence")
 
-    display_evidence(st.session_state.last_passages)
+        st.info(
+            "Retrieved passages are not displayed as "
+            "supporting evidence because the assistant "
+            "abstained from answering."
+        )
+
+    else:
+
+        st.markdown("## Supporting research evidence")
+
+        st.caption(
+            f"{len(st.session_state.last_passages)} "
+            "retrieved passages from unique research papers."
+        )
+
+        display_evidence(
+            st.session_state.last_passages
+        )
 
 
 # ==================================================
